@@ -22,7 +22,9 @@ Display Manager Pro brings display information and everyday layout controls toge
 
 ## Download
 
-Download the macOS app and installer image from the project's GitHub Releases page. Release downloads and supported system requirements will be listed with each release.
+[Download Display Manager Pro v1.1.0 for macOS (.dmg)](https://github.com/yuchungchen1214/display-manager-pro/releases/download/v1.1.0/DisplayManagerPro-v1.1.0-macOS.dmg)
+
+See the [v1.1.0 release notes](https://github.com/yuchungchen1214/display-manager-pro/releases/tag/v1.1.0).
 
 ## Important notes
 
