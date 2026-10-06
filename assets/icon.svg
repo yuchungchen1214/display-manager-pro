@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="224" fill="#202020"/>
+  <text x="171" y="475" fill="#fff" font-family="Arial Rounded MT Bold" font-size="440" font-weight="600" stroke="#202020" stroke-width="17" paint-order="stroke fill">D</text>
+  <text x="474" y="475" fill="#fff" font-family="Arial Rounded MT Bold" font-size="340" font-weight="600">m</text>
+  <rect x="664" y="540" width="246" height="246" rx="56" fill="#00e6e8"/>
+  <rect x="558" y="678" width="248" height="246" rx="56" fill="#00e6e8"/>
+</svg>

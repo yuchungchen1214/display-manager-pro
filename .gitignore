@@ -1,0 +1,21 @@
+# Local captures can contain EDID, display serials, UUIDs, and system inventory.
+/output/
+/capture-local/
+/capture-20*/
+
+# Build products and local Python caches.
+/.build/
+/build/
+/dist/
+/dist-*/
+/.swiftpm/
+/.DS_Store
+__pycache__/
+*.py[cod]
+/tools/fullscreen-overlay-test/Fullscreen Overlay Test.app/
+/tools/fullscreen-overlay-test-v2/All-Display Overlay Test v2.app/
+
+# Local IDE and environment files.
+/.venv/
+/.idea/
+/.vscode/
