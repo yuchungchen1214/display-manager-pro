@@ -37,13 +37,13 @@ class FrameWindowTests(unittest.TestCase):
         self.assertEqual(len(self.window.source_buttons), 2)
         self.assertEqual([button.text() for button in self.window.source_buttons],
                          ["Built-in", "External"])
-        self.assertEqual(self.window.canvas.output_pixels, (4944.0, 1964.0))
-        self.assertEqual(self.window.canvas.layout_bounds, QRectF(0.0, 0.0, 4944.0, 1964.0))
+        self.assertEqual(self.window.canvas.output_pixels, (6864.0, 2160.0))
+        self.assertEqual(self.window.canvas.layout_bounds, QRectF(0.0, 0.0, 6864.0, 2160.0))
         self.assertEqual(
             [(d["x"], d["y"], d["width"], d["height"])
              for d in self.window.canvas.layout_displays],
             [(0.0, 0.0, 3024.0, 1964.0),
-             (3024.0, 0.0, 1920.0, 1080.0)])
+             (3024.0, 0.0, 3840.0, 2160.0)])
         self.window._add_source()
         self.assertEqual(self.window.canvas.sources[0]["displayID"], "1")
         self.assertEqual((self.window.canvas.sources[0]["x"],
@@ -72,8 +72,8 @@ class FrameWindowTests(unittest.TestCase):
         self.assertEqual(canvas._selection_indices(), [2, 3])
         self.assertAlmostEqual(canvas.sources[2]["x"], 10.0 + expected_offset)
         self.assertAlmostEqual(canvas.sources[2]["y"], 20.0 + expected_offset)
-        self.assertEqual(canvas.sources[3]["x"] - canvas.sources[2]["x"], 130.0)
-        self.assertEqual(canvas.sources[3]["y"] - canvas.sources[2]["y"], 30.0)
+        self.assertAlmostEqual(canvas.sources[3]["x"] - canvas.sources[2]["x"], 130.0)
+        self.assertAlmostEqual(canvas.sources[3]["y"] - canvas.sources[2]["y"], 30.0)
         self.assertEqual(canvas.sources[2]["rotation"], 15)
         self.assertFalse(canvas.sources[2]["showCursor"])
 
@@ -336,7 +336,7 @@ class FrameWindowTests(unittest.TestCase):
         canvas = self.window.canvas
         canvas.add_source("2", "External", 960, 540)
         source = canvas.sources[0]
-        self.assertEqual((source["x"], source["y"]), (3504.0, 270.0))
+        self.assertEqual((source["x"], source["y"]), (3984.0, 540.0))
 
     def test_duplicate_source_cards_are_offset_by_sixteen_view_points(self):
         canvas = self.window.canvas
@@ -365,10 +365,11 @@ class FrameWindowTests(unittest.TestCase):
         canvas = self.window.canvas
         canvas.resize(900, 600)
         before = canvas._canvas_rect().center()
+        expected_zoom = canvas._clamp_zoom(canvas.zoom_factor * 2.0)
         canvas._zoom_by(2.0)
         after = canvas._canvas_rect().center()
         self.assertEqual(before, after)
-        self.assertEqual(canvas.zoom_factor, canvas._clamp_zoom(2.0))
+        self.assertEqual(canvas.zoom_factor, expected_zoom)
 
     def test_max_zoom_keeps_entire_arrange_group_inside_stage_with_margin(self):
         canvas = FrameCanvas()
@@ -555,7 +556,13 @@ class FrameWindowTests(unittest.TestCase):
     def test_new_source_starts_at_full_arranged_display_size(self):
         self.window.source_buttons[1].click()
         source = self.window.canvas.sources[0]
-        self.assertEqual((source["width"], source["height"]), (1920.0, 1080.0))
+        self.assertEqual((source["width"], source["height"]), (3840.0, 2160.0))
+        self.assertEqual((source["width"] * source["pixelScaleX"],
+                          source["height"] * source["pixelScaleY"]), (1920, 1080))
+        output = self.window.canvas.layout_displays[1]
+        scene = self.window.canvas.source_scene()[0]
+        for key in ("x", "y", "width", "height"):
+            self.assertEqual(scene[key], output[key])
 
     def test_new_source_uses_logical_arrangement_dimensions_on_retina_screen(self):
         self.window.source_buttons[0].click()

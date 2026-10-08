@@ -133,12 +133,9 @@ def _helper_path() -> Path:
 
 
 def _pixel_layout_displays(displays):
-    """Project Arrange's mixed-scale desktop rectangles into a pixel canvas.
+    """Preserve Arrange geometry using one shared canvas scale.
 
-    Every display keeps its real framebuffer width and height. Relative
-    positions are accumulated from the main display; when displays touch, the
-    seam is exact, and any gap/overlap is converted using the neighboring
-    display's local pixel density.
+    Framebuffer sizes stay separate for output and source pixel labels.
     """
     records = []
     for display in displays:
@@ -164,93 +161,17 @@ def _pixel_layout_displays(displays):
     if not records:
         return []
 
+    root = next((record for record in records if record["main"]), records[0])
+    scale = root["pixelWidth"] / root["desktopWidth"]
     by_id = {record["displayID"]: record for record in records}
-    independent = [record for record in records
-                   if not _mirror_master_id(record) or
-                   _mirror_master_id(record) == record["displayID"] or
-                   _mirror_master_id(record) not in by_id]
-    if not independent:
-        independent = records[:1]
-    root = next((record for record in independent if record["main"]), independent[0])
-    mapped = {root["displayID"]: (0.0, 0.0)}
-
-    def overlap(start_a, size_a, start_b, size_b):
-        return max(0.0, min(start_a + size_a, start_b + size_b) - max(start_a, start_b))
-
-    def axis_position(parent, child, axis, parent_pixel_origin):
-        if axis == "x":
-            p_start, p_size = parent["desktopX"], parent["desktopWidth"]
-            c_start, c_size = child["desktopX"], child["desktopWidth"]
-            p_pixel_size = parent["pixelWidth"]
-        else:
-            p_start, p_size = parent["desktopY"], parent["desktopHeight"]
-            c_start, c_size = child["desktopY"], child["desktopHeight"]
-            p_pixel_size = parent["pixelHeight"]
-        p_scale = p_pixel_size / p_size
-        c_pixel_size = child["pixelWidth"] if axis == "x" else child["pixelHeight"]
-        p_end, c_end = p_start + p_size, c_start + c_size
-        if c_start >= p_end:
-            return parent_pixel_origin + p_pixel_size + (c_start - p_end) * p_scale
-        if c_end <= p_start:
-            c_scale = c_pixel_size / c_size
-            return parent_pixel_origin - c_pixel_size - (p_start - c_end) * c_scale
-        return parent_pixel_origin + (c_start - p_start) * p_scale
-
-    unresolved = [record for record in independent if record["displayID"] not in mapped]
-    while unresolved:
-        placed = [record for record in independent if record["displayID"] in mapped]
-
-        def nearest_distance(child):
-            return min(
-                max(0.0, parent["desktopX"] - (child["desktopX"] + child["desktopWidth"]),
-                    child["desktopX"] - (parent["desktopX"] + parent["desktopWidth"]))
-                + max(0.0, parent["desktopY"] - (child["desktopY"] + child["desktopHeight"]),
-                      child["desktopY"] - (parent["desktopY"] + parent["desktopHeight"]))
-                for parent in placed)
-
-        child = min(unresolved, key=nearest_distance)
-
-        def best_parent(axis):
-            if axis == "x":
-                orth = lambda item: (item["desktopY"], item["desktopHeight"])
-                pos_key, size_key = "desktopX", "desktopWidth"
-            else:
-                orth = lambda item: (item["desktopX"], item["desktopWidth"])
-                pos_key, size_key = "desktopY", "desktopHeight"
-            child_orth, child_orth_size = orth(child)
-
-            def score(parent):
-                parent_orth, parent_orth_size = orth(parent)
-                shared = overlap(child_orth, child_orth_size, parent_orth, parent_orth_size)
-                orth_gap = max(0.0, parent_orth - (child_orth + child_orth_size),
-                               child_orth - (parent_orth + parent_orth_size))
-                gap = max(0.0, parent[pos_key] - (child[pos_key] + child[size_key]),
-                          child[pos_key] - (parent[pos_key] + parent[size_key]))
-                return (shared, -orth_gap, -gap)
-
-            return max(placed, key=score)
-
-        x_parent = best_parent("x")
-        y_parent = best_parent("y")
-        _, child_y = mapped[y_parent["displayID"]]
-        child_x, _ = mapped[x_parent["displayID"]]
-        mapped[child["displayID"]] = (
-            axis_position(x_parent, child, "x", child_x),
-            axis_position(y_parent, child, "y", child_y),
-        )
-        unresolved.remove(child)
-
     for record in records:
-        mirror_id = _mirror_master_id(record)
-        if mirror_id and mirror_id != record["displayID"] and mirror_id in by_id:
-            master = by_id[mirror_id]
-            mx, my = mapped.get(mirror_id, (0.0, 0.0))
-            record.update(x=mx, y=my,
-                          width=master["pixelWidth"], height=master["pixelHeight"])
-        else:
-            px, py = mapped.get(record["displayID"], (0.0, 0.0))
-            record.update(x=px, y=py,
-                          width=record["pixelWidth"], height=record["pixelHeight"])
+        geometry = by_id.get(_mirror_master_id(record), record)
+        record.update(
+            x=geometry["desktopX"] * scale,
+            y=geometry["desktopY"] * scale,
+            width=geometry["desktopWidth"] * scale,
+            height=geometry["desktopHeight"] * scale,
+        )
     return records
 
 
@@ -333,6 +254,8 @@ class FrameCanvas(QWidget):
         output = next((display for display in self.layout_displays
                        if str(display.get("displayID")) == source_id), None)
         if output:
+            source_w *= float(output["width"]) / float(output.get("pixelWidth") or output["width"])
+            source_h *= float(output["height"]) / float(output.get("pixelHeight") or output["height"])
             x = float(output["x"]) + (float(output["width"]) - source_w) / 2
             y = float(output["y"]) + (float(output["height"]) - source_h) / 2
         else:
@@ -355,6 +278,8 @@ class FrameCanvas(QWidget):
         self.sources.append({"displayID": str(display_id), "name": name,
                              "x": x, "y": y,
                              "width": source_w, "height": source_h,
+                             "pixelScaleX": float(width) / source_w,
+                             "pixelScaleY": float(height) / source_h,
                              "showCursor": True, "rotation": 0})
         self.selected = len(self.sources) - 1
         self.selected_sources = {self.selected}
@@ -665,9 +590,9 @@ class FrameCanvas(QWidget):
             dimension_pen = (self._appearance_color("#D99A3E") if selected else
                              self.palette().windowText().color())
             painter.setPen(dimension_pen)
-            width_text = f"{round(source['width'])} px"
+            width_text = f"{round(source['width'] * source.get('pixelScaleX', 1))} px"
             width_text_width = metrics.horizontalAdvance(width_text)
-            height_text = f"{round(source['height'])} px"
+            height_text = f"{round(source['height'] * source.get('pixelScaleY', 1))} px"
             height_text_width = metrics.horizontalAdvance(height_text)
             label_height = metrics.height()
             name_bounds = painter.boundingRect(
