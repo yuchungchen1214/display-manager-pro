@@ -8,8 +8,9 @@ import sys
 
 from PySide6.QtCore import (QEvent, Qt, Signal, QPointF, QRectF, QProcess, QTimer,
                             QSize, QRect)
-from PySide6.QtGui import (QAction, QColor, QNativeGestureEvent, QPainter,
-                           QPen, QShortcut, QKeySequence, QPalette)
+from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics,
+                           QNativeGestureEvent, QPainter, QPen, QShortcut,
+                           QKeySequence, QPalette)
 from PySide6.QtWidgets import (
     QApplication, QDialog, QHBoxLayout, QLabel, QLayout, QMenu,
     QMessageBox, QPushButton, QSizePolicy, QStyle, QVBoxLayout, QWidget,
@@ -553,12 +554,39 @@ class FrameCanvas(QWidget):
                 painter.drawRect(rect)
                 pixel_width = display.get("pixelWidth") or round(width)
                 pixel_height = display.get("pixelHeight") or round(height)
-                text = (f"{display['name']}\n"
-                        f"{int(round(float(pixel_width)))} × "
-                        f"{int(round(float(pixel_height)))}")
+                title_font = QFont(painter.font())
+                title_font.setBold(True)
+                title_font.setPointSizeF(11)
+                detail_font = QFont(title_font)
+                detail_font.setBold(False)
+                detail_font.setPointSizeF(9)
+                title_metrics = QFontMetrics(title_font)
+                detail_metrics = QFontMetrics(detail_font)
+                gap = 2
+                text_height = title_metrics.height() + gap + detail_metrics.height()
+                text_top = rect.center().y() - text_height / 2
+                text_rect = rect.adjusted(6, 6, -6, -6)
+                title = title_metrics.elidedText(
+                    display["name"], Qt.TextElideMode.ElideRight,
+                    max(1, int(text_rect.width())))
+                resolution = (f"{int(round(float(pixel_width)))} × "
+                              f"{int(round(float(pixel_height)))}")
+                resolution = detail_metrics.elidedText(
+                    resolution, Qt.TextElideMode.ElideRight,
+                    max(1, int(text_rect.width())))
                 painter.setPen(output_guide_color)
-                painter.drawText(rect.adjusted(6, 6, -6, -6),
-                                 Qt.AlignmentFlag.AlignCenter, text)
+                painter.setFont(title_font)
+                painter.drawText(
+                    QRectF(text_rect.left(), text_top, text_rect.width(),
+                           title_metrics.height()),
+                    Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+                    title)
+                painter.setFont(detail_font)
+                painter.drawText(
+                    QRectF(text_rect.left(), text_top + title_metrics.height() + gap,
+                           text_rect.width(), detail_metrics.height()),
+                    Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+                    resolution)
         for index in self._paint_order():
             source = self.sources[index]
             rect = self._to_canvas_rect(source)
@@ -590,9 +618,9 @@ class FrameCanvas(QWidget):
             dimension_pen = (self._appearance_color("#D99A3E") if selected else
                              self.palette().windowText().color())
             painter.setPen(dimension_pen)
-            width_text = f"{round(source['width'] * source.get('pixelScaleX', 1))} px"
+            width_text = f"{round(source['width'] * source.get('pixelScaleX', 1))}"
             width_text_width = metrics.horizontalAdvance(width_text)
-            height_text = f"{round(source['height'] * source.get('pixelScaleY', 1))} px"
+            height_text = f"{round(source['height'] * source.get('pixelScaleY', 1))}"
             height_text_width = metrics.horizontalAdvance(height_text)
             label_height = metrics.height()
             name_bounds = painter.boundingRect(
@@ -667,6 +695,17 @@ class FrameCanvas(QWidget):
             painter.setPen(self.palette().windowText().color())
             painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, label)
         self._paint_measurement_guides(painter)
+        scale_font = painter.font()
+        scale_font.setPointSizeF(8)
+        scale_font.setBold(False)
+        painter.setFont(scale_font)
+        painter.setPen(self._appearance_color("#aaaaaa"))
+        metrics = painter.fontMetrics()
+        stage = self._stage_rect()
+        painter.drawText(
+            QPointF(stage.left() + 4,
+                    stage.bottom() - 8 - metrics.descent()),
+            "Unit: px")
         painter.restore()
         painter.end()
 
@@ -729,7 +768,7 @@ class FrameCanvas(QWidget):
                 end = self._scene_to_canvas_point(end_scene)
                 center = QPointF((start.x() + end.x()) / 2,
                                  (start.y() + end.y()) / 2)
-                specs.append((start, end, f"{round(distance)} px", center))
+                specs.append((start, end, f"{round(distance)}", center))
         return specs
 
     def _scene_to_canvas_point(self, point):
@@ -2559,7 +2598,11 @@ class FrameWindow(QDialog):
         root = QVBoxLayout(self)
         self.canvas = FrameCanvas(self)
         self.source_buttons_layout = FlowLayout(spacing=8)
-        self.source_buttons_layout.addWidget(QLabel("Add source"))
+        add_source_label = QLabel("Add source")
+        # The canvas stage begins 8 px inside the canvas widget; inset the
+        # label by the same amount so its text aligns with the black surface.
+        add_source_label.setContentsMargins(8, 0, 0, 0)
+        self.source_buttons_layout.addWidget(add_source_label)
         self._rebuild_source_buttons()
         root.addLayout(self.source_buttons_layout)
         root.addWidget(self.canvas, 1)

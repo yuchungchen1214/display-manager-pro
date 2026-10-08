@@ -1983,16 +1983,25 @@ class DisplayArrangementCanvas(QWidget):
                                      round(origin.x() + arm_x), round(origin.y()))
                     painter.drawLine(round(origin.x()), round(origin.y() - arm_y),
                                      round(origin.x()), round(origin.y() + arm_y))
+        scale_font = painter.font()
+        scale_font.setPointSizeF(8)
+        scale_font.setBold(False)
+        painter.setFont(scale_font)
+        painter.setPen(appearance_color("#aaaaaa"))
+        metrics = QFontMetrics(scale_font)
+        stage_label = "Unit: pt"
         if coordinate_axes is not None:
             _origin, step = coordinate_axes
-            scale_font = painter.font()
-            scale_font.setPointSizeF(8)
-            scale_font.setBold(False)
-            painter.setFont(scale_font)
-            painter.setPen(appearance_color("#aaaaaa"))
-            painter.drawText(self.rect().adjusted(12, 0, -12, -8),
-                             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
-                             f"Grid: {int(step)} points")
+            grid_label = f"Grid: {int(step)}pt"
+            painter.drawText(
+                QPointF(12, self.height() - 8 - metrics.descent()), stage_label)
+            grid_label_x = 12 + metrics.horizontalAdvance(stage_label) + 14
+            painter.drawText(
+                QPointF(grid_label_x, self.height() - 8 - metrics.descent()),
+                grid_label)
+        else:
+            painter.drawText(
+                QPointF(12, self.height() - 8 - metrics.descent()), stage_label)
         if self._primary_bar_dragging and self._primary_bar_point is not None:
             ghost = QRectF(self._primary_bar_point.x() - self._primary_bar_width / 2,
                            self._primary_bar_point.y() - 4, self._primary_bar_width, 8)
@@ -2028,10 +2037,7 @@ class DisplayArrangementDialog(QDialog):
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(10)
         title = QLabel("Current display arrangement")
-        font = title.font()
-        font.setBold(True)
-        font.setPointSize(font.pointSize() + 2)
-        title.setFont(font)
+        title.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(title)
         self.canvas = DisplayArrangementCanvas(screens)
         # The canvas has already committed and painted the exact drop point.
