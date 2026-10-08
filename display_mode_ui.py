@@ -37,16 +37,25 @@ SHORTCUT_HELP = (
     ("Main window", ""),
     ("Refresh displays", "R"),
     ("Open Arrange", "A"),
+    ("Open Frame", "F"),
     ("Export report", "⌘E"),
     ("Switch tabs", "← / →"),
     ("Select display", "↑ / ↓"),
     ("Arrange", ""),
-    ("Close Arrange", "A / ⌘W"),
     ("Identify displays (hold)", "I"),
     ("Cycle all Mapping: Off → translucent → opaque", "M"),
     ("Turn off all Mapping", "Esc"),
     ("Show / hide coordinates", "C"),
     ("Toggle snapping", "⌘S"),
+    ("Frame", ""),
+    ("Move selected sources (1 px)", "↑ / ↓ / ← / →"),
+    ("Move selected sources (100 px)", "Shift + ↑ / ↓ / ← / →"),
+    ("Select all", "⌘A"),
+    ("Copy", "⌘C"),
+    ("Paste", "⌘V"),
+    ("Delete selected sources", "Delete / Backspace"),
+    ("Hold to preview output", "Space"),
+    ("Toggle output", "⌘⌥F"),
     ("Help", ""),
     ("Show Shortcut", "⌘/"),
 )
@@ -470,7 +479,7 @@ class MacLetterShortcutMonitor:
     # can consume the corresponding text characters.
     _LETTERS = {0: "A", 3: "F", 8: "C", 15: "R", 34: "I", 46: "M"}
     _CALLBACK = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_ushort, ctypes.c_bool,
-                                 ctypes.c_bool, ctypes.c_bool)
+                                 ctypes.c_bool, ctypes.c_bool, ctypes.c_bool)
 
     def __init__(self, owner):
         self.owner = owner
@@ -499,7 +508,8 @@ class MacLetterShortcutMonitor:
 
     def _handle_key(self, key_code: int, is_key_down: bool,
                     command_only: bool = False,
-                    command_option: bool = False) -> bool:
+                    command_option: bool = False,
+                    shift_only: bool = False) -> bool:
         dialog = self.owner.arrangement_dialog
         if not is_key_down:
             if key_code == 34 and dialog is not None and dialog._identify_keyboard_held:
@@ -541,6 +551,12 @@ class MacLetterShortcutMonitor:
                 else:
                     frame._paste_sources()
                 return True
+            shortcuts = getattr(self.owner, "shortcuts_dialog", None)
+            if (key_code == 13 and shortcuts is not None
+                    and shortcuts.isVisible()
+                    and ApplicationShortcutFilter._has_focus_in(shortcuts)):
+                shortcuts.hide()
+                return True
             if (key_code == 13 and frame is not None and frame.isVisible()
                     and ApplicationShortcutFilter._has_focus_in(frame)):
                 frame.close()
@@ -559,6 +575,20 @@ class MacLetterShortcutMonitor:
                     button.click()
                     return True
             return False
+        frame = getattr(self.owner, "frame_dialog", None)
+        arrow_delta = {
+            123: (-1, 0),  # Left
+            124: (1, 0),   # Right
+            125: (0, 1),   # Down
+            126: (0, -1),  # Up
+        }.get(key_code)
+        if (arrow_delta is not None and frame is not None and frame.isVisible()
+                and QApplication.activePopupWidget() is None
+                and ApplicationShortcutFilter._has_focus_in(frame)
+                and not ApplicationShortcutFilter._is_text_entry(frame)):
+            step = 100 if shift_only else 1
+            return frame.canvas.nudge_selected(
+                arrow_delta[0] * step, arrow_delta[1] * step)
         letter = self._LETTERS.get(key_code)
         if letter is None:
             return False
@@ -4503,22 +4533,34 @@ class DisplayInspectorWindow(QMainWindow):
         if self.shortcuts_dialog is None:
             dialog = QDialog(self)
             dialog.setWindowTitle("Keyboard Shortcuts")
-            dialog.setMinimumWidth(520)
+            dialog.setMinimumSize(520, 400)
+            dialog.resize(520, 500)
             dialog._section_labels = []
             dialog._title_labels = []
             dialog._shortcut_labels = []
             layout = QVBoxLayout(dialog)
             layout.setContentsMargins(20, 18, 20, 14)
             layout.setSpacing(10)
+            scroll_area = QScrollArea(dialog)
+            scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+            scroll_area.setWidgetResizable(True)
+            scroll_area.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            content = QWidget()
+            content_layout = QVBoxLayout(content)
+            content_layout.setContentsMargins(0, 0, 0, 0)
+            content_layout.setSpacing(10)
+            scroll_area.setWidget(content)
+            layout.addWidget(scroll_area, 1)
             first_section = True
             for title, shortcut in SHORTCUT_HELP:
                 if not shortcut:
                     if not first_section:
-                        layout.addSpacing(10)
+                        content_layout.addSpacing(10)
                     first_section = False
                     section_label = QLabel(title)
                     dialog._section_labels.append(section_label)
-                    layout.addWidget(section_label)
+                    content_layout.addWidget(section_label)
                     continue
                 row = QHBoxLayout()
                 row.setContentsMargins(0, 2, 0, 2)
@@ -4532,7 +4574,8 @@ class DisplayInspectorWindow(QMainWindow):
                 dialog._shortcut_labels.append(shortcut_label)
                 row.addWidget(title_label, 1)
                 row.addWidget(shortcut_label)
-                layout.addLayout(row)
+                content_layout.addLayout(row)
+            content_layout.addStretch(1)
             layout.addSpacing(10)
             close_button = QPushButton("Close")
             close_button.setDefault(True)
@@ -4543,7 +4586,6 @@ class DisplayInspectorWindow(QMainWindow):
             button_row.addStretch()
             layout.addLayout(button_row)
             self.shortcuts_dialog = dialog
-            dialog.adjustSize()
         self._apply_shortcuts_dialog_theme()
         if self.shortcuts_dialog.isVisible():
             self.shortcuts_dialog.hide()

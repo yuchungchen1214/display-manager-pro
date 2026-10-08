@@ -9,7 +9,7 @@ import sys
 from PySide6.QtCore import (QEvent, Qt, Signal, QPointF, QRectF, QProcess, QTimer,
                             QSize, QRect)
 from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics,
-                           QNativeGestureEvent, QPainter, QPen, QShortcut,
+                           QNativeGestureEvent, QPainter, QPen,
                            QKeySequence, QPalette)
 from PySide6.QtWidgets import (
     QApplication, QDialog, QHBoxLayout, QLabel, QLayout, QMenu,
@@ -209,6 +209,11 @@ class FrameCanvas(QWidget):
         self._rotation_label_pos = None
         self._last = QPointF()
         self._handle = 12.0
+        self._keyboard_nudge_active = False
+        self._keyboard_nudge_timer = QTimer(self)
+        self._keyboard_nudge_timer.setSingleShot(True)
+        self._keyboard_nudge_timer.setInterval(600)
+        self._keyboard_nudge_timer.timeout.connect(self._finish_keyboard_nudge)
 
     def set_output_size(self, width, height):
         self._center_snap_latches.clear()
@@ -385,6 +390,26 @@ class FrameCanvas(QWidget):
         self._set_selection(indices, max(indices) if indices else None)
         self.update()
 
+    def nudge_selected(self, dx, dy):
+        indices = self._selection_indices()
+        if not indices:
+            return False
+        before = [(self.sources[index]["x"], self.sources[index]["y"])
+                  for index in indices]
+        self._move_selected_by(dx, dy)
+        if before == [(self.sources[index]["x"], self.sources[index]["y"])
+                      for index in indices]:
+            return False
+        self._keyboard_nudge_active = True
+        self._keyboard_nudge_timer.start()
+        self.update()
+        self.sceneChanged.emit()
+        return True
+
+    def _finish_keyboard_nudge(self):
+        self._keyboard_nudge_active = False
+        self.update()
+
     def source_scene(self):
         keys = ("displayID", "x", "y", "width", "height")
         return [{**{key: item[key] for key in keys},
@@ -522,7 +547,7 @@ class FrameCanvas(QWidget):
 
     def _paint_order(self):
         order = list(range(len(self.sources)))
-        if self._drag:
+        if self._drag or self._keyboard_nudge_active:
             selected = self._selection_indices()
             order = [index for index in order if index not in selected] + selected
         return order
@@ -796,7 +821,8 @@ class FrameCanvas(QWidget):
         return [[corners[0], corners[1], corners[3], corners[2]]], set(selection)
 
     def _paint_measurement_guides(self, painter):
-        if not self._drag or self._drag == "rotate":
+        if ((not self._drag and not self._keyboard_nudge_active)
+                or self._drag == "rotate"):
             return
         source_polygons, excluded = self._measurement_anchor()
         if not source_polygons:
