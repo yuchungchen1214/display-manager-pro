@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 — 2026-10-08
+
+- Add a full-desktop Frame editor with freely positioned, resized, rotated, and layered source regions.
+- Add multi-selection, keyboard editing, snapping, stream-cursor controls, and live pixel measurements.
+- Stop Frame output when the arranged display layout changes, preserving source-card positions in the editor.
+- Refine Frame source controls and editing behavior.
+
 ## 1.1.0 — 2026-10-06
 
 - Add configurable Mapping overlays, including per-display and all-display controls, in the Arrangement view.

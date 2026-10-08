@@ -32,6 +32,44 @@ class ShortcutFocusRoutingTests(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         cls.app = QApplication.instance() or QApplication([])
 
+    def test_native_f_shortcut_closes_the_focused_frame_window(self):
+        frame = unittest.mock.Mock(isVisible=lambda: True)
+        owner = SimpleNamespace(arrangement_dialog=None, frame_dialog=frame)
+        monitor = object.__new__(MacLetterShortcutMonitor)
+        monitor.owner = owner
+
+        with patch.object(ApplicationShortcutFilter, "_has_focus_in",
+                          side_effect=lambda window: window is frame), \
+                patch.object(ApplicationShortcutFilter, "_is_text_entry",
+                              return_value=False):
+            self.assertTrue(monitor._handle_key(3, True))
+
+        frame.close.assert_called_once()
+
+    def test_native_command_option_f_toggles_focused_frame_output(self):
+        frame = unittest.mock.Mock(isVisible=lambda: True)
+        owner = SimpleNamespace(arrangement_dialog=None, frame_dialog=frame)
+        monitor = object.__new__(MacLetterShortcutMonitor)
+        monitor.owner = owner
+
+        with patch.object(ApplicationShortcutFilter, "_has_focus_in",
+                          side_effect=lambda window: window is frame):
+            self.assertTrue(monitor._handle_key(3, True, command_option=True))
+
+        frame.toggle_output.assert_called_once()
+
+    def test_native_command_w_closes_the_focused_frame_window(self):
+        frame = unittest.mock.Mock(isVisible=lambda: True)
+        owner = SimpleNamespace(arrangement_dialog=None, frame_dialog=frame)
+        monitor = object.__new__(MacLetterShortcutMonitor)
+        monitor.owner = owner
+
+        with patch.object(ApplicationShortcutFilter, "_has_focus_in",
+                          side_effect=lambda window: window is frame):
+            self.assertTrue(monitor._handle_key(13, True, command_only=True))
+
+        frame.close.assert_called_once()
+
     def test_explicit_orange_foreground_survives_selection_in_both_themes(self):
         table = QTableWidget(1, 1)
         item = QTableWidgetItem("Current")
@@ -246,7 +284,7 @@ class ShortcutFocusRoutingTests(unittest.TestCase):
             self.assertFalse(monitor._handle_key(15, True))
         owner.refresh_button.click.assert_not_called()
 
-    def test_mac_arrange_shortcuts_route_a_f_and_identify_hold(self):
+    def test_mac_arrange_shortcuts_route_a_m_and_identify_hold(self):
         dialog = unittest.mock.Mock()
         dialog.isVisible.return_value = True
         dialog.identify_button.isEnabled.return_value = True
@@ -257,7 +295,7 @@ class ShortcutFocusRoutingTests(unittest.TestCase):
         with patch.object(ApplicationShortcutFilter, "_has_focus_in", return_value=True), \
                 patch.object(ApplicationShortcutFilter, "_is_text_entry", return_value=False):
             self.assertTrue(monitor._handle_key(0, True))
-            self.assertTrue(monitor._handle_key(3, True))
+            self.assertTrue(monitor._handle_key(46, True))
             self.assertTrue(monitor._handle_key(34, True))
             self.assertTrue(monitor._handle_key(34, False))
             self.assertTrue(monitor._handle_key(1, True, True))
@@ -286,7 +324,7 @@ class ShortcutFocusRoutingTests(unittest.TestCase):
         monitor = object.__new__(MacLetterShortcutMonitor)
         monitor.owner = owner
         with patch.object(QApplication, "activePopupWidget", return_value=deep):
-            self.assertTrue(monitor._handle_key(3, True))
+            self.assertTrue(monitor._handle_key(46, True))
             self.assertTrue(monitor._handle_key(8, True))
             self.assertTrue(monitor._handle_key(34, True))
             self.assertTrue(monitor._handle_key(1, True, True))
@@ -516,7 +554,7 @@ class ArrangementPositionHoldTests(unittest.TestCase):
                     {settings["enabled"] for settings in self.dialog._mapping_settings.values()},
                     {expected})
 
-    def test_f_updates_checkmarks_in_open_mapping_menu(self):
+    def test_m_updates_checkmarks_in_open_mapping_menu(self):
         menu = QMenu(self.dialog)
         mapping_menu = menu.addMenu("Mapping")
         actions = {}

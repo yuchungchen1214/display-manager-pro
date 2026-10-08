@@ -2,7 +2,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-typedef bool (*DMIShortcutCallback)(uint16_t keyCode, bool isKeyDown, bool commandOnly);
+typedef bool (*DMIShortcutCallback)(uint16_t keyCode, bool isKeyDown,
+                                    bool commandOnly, bool commandOption);
 
 static id dmiMonitor = nil;
 static DMIShortcutCallback dmiCallback = NULL;
@@ -19,19 +20,29 @@ bool DMIInstallShortcutMonitor(DMIShortcutCallback callback) {
         uint16_t code = event.keyCode;
         if (event.type == NSEventTypeKeyUp) {
             if (code != 34) return event;
-            return dmiCallback(code, false, false) ? nil : event;
+            return dmiCallback(code, false, false, false) ? nil : event;
         }
         if (event.isARepeat ||
-            (modifiers & (NSEventModifierFlagShift | NSEventModifierFlagControl |
-                          NSEventModifierFlagOption)) != 0) return event;
-        bool commandOnly = (modifiers & NSEventModifierFlagCommand) != 0;
+            (modifiers & (NSEventModifierFlagShift | NSEventModifierFlagControl)) != 0)
+            return event;
+        bool hasCommand = (modifiers & NSEventModifierFlagCommand) != 0;
+        bool hasOption = (modifiers & NSEventModifierFlagOption) != 0;
+        bool commandOption = hasCommand && hasOption;
+        if (hasOption && !commandOption) return event;
+        bool commandOnly = hasCommand && !hasOption;
+        if (commandOption) {
+            if (code != 3) return event;
+            return dmiCallback(code, true, false, true) ? nil : event;
+        }
         if (commandOnly) {
-            if (code != 1 && code != 13 && code != 14 && code != 44) return event;
-            // ⌘S / ⌘W / ⌘E / ⌘/
-        } else if (code != 0 && code != 3 && code != 8 && code != 15 && code != 34) {
+            if (code != 0 && code != 1 && code != 8 && code != 9 &&
+                code != 13 && code != 14 && code != 44) return event;
+            // ⌘A / ⌘S / ⌘C / ⌘V / ⌘W / ⌘E / ⌘/
+        } else if (code != 0 && code != 3 && code != 8 && code != 15 &&
+                   code != 34 && code != 46) {
             return event;
         }
-        return dmiCallback(code, true, commandOnly) ? nil : event;
+        return dmiCallback(code, true, commandOnly, false) ? nil : event;
     }];
     if (dmiMonitor == nil) dmiCallback = NULL;
     return dmiMonitor != nil;

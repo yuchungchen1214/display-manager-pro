@@ -14,6 +14,7 @@ import sys
 from urllib.parse import unquote, urlparse
 import capture as capture_service
 import diagnostics as diagnostics_service
+from frame_window import FrameWindow
 from desktop_modes import format_hz, preferred_mode_for_resolution, resolution_groups
 from datetime import datetime
 from pathlib import Path
@@ -42,7 +43,7 @@ SHORTCUT_HELP = (
     ("Arrange", ""),
     ("Close Arrange", "A / ⌘W"),
     ("Identify displays (hold)", "I"),
-    ("Cycle all Mapping: Off → translucent → opaque", "F"),
+    ("Cycle all Mapping: Off → translucent → opaque", "M"),
     ("Turn off all Mapping", "Esc"),
     ("Show / hide coordinates", "C"),
     ("Toggle snapping", "⌘S"),
@@ -431,7 +432,8 @@ class ApplicationShortcutFilter(QObject):
     def eventFilter(self, watched, event):
         if (event.type() == QEvent.Type.EnabledChange and
                 watched in (self.owner.refresh_button, self.owner.arrange_button,
-                            self.owner.export_button)):
+                            self.owner.export_button,
+                            getattr(self.owner, "frame_button", None))):
             self.owner._sync_shortcut_action_state()
             return False
         if event.type() != QEvent.Type.KeyPress:
@@ -464,9 +466,11 @@ class ApplicationShortcutFilter(QObject):
 class MacLetterShortcutMonitor:
     """Handle local AppKit key events before a Chinese IME consumes them."""
 
-    _LETTERS = {0: "A", 3: "F", 8: "C", 15: "R", 34: "I"}
+    # macOS virtual key codes are used so these shortcuts run before the IME
+    # can consume the corresponding text characters.
+    _LETTERS = {0: "A", 3: "F", 8: "C", 15: "R", 34: "I", 46: "M"}
     _CALLBACK = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_ushort, ctypes.c_bool,
-                                 ctypes.c_bool)
+                                 ctypes.c_bool, ctypes.c_bool)
 
     def __init__(self, owner):
         self.owner = owner
@@ -494,11 +498,19 @@ class MacLetterShortcutMonitor:
         self._library.DMIRemoveShortcutMonitor()
 
     def _handle_key(self, key_code: int, is_key_down: bool,
-                    command_only: bool = False) -> bool:
+                    command_only: bool = False,
+                    command_option: bool = False) -> bool:
         dialog = self.owner.arrangement_dialog
         if not is_key_down:
             if key_code == 34 and dialog is not None and dialog._identify_keyboard_held:
                 dialog._set_identify_keyboard_held(False)
+                return True
+            return False
+        if command_option:
+            frame = getattr(self.owner, "frame_dialog", None)
+            if (key_code == 3 and frame is not None and frame.isVisible()
+                    and ApplicationShortcutFilter._has_focus_in(frame)):
+                frame.toggle_output()
                 return True
             return False
         if command_only:
@@ -516,6 +528,23 @@ class MacLetterShortcutMonitor:
                     self.owner.show_shortcuts_dialog()
                     return True
                 return False
+            frame = getattr(self.owner, "frame_dialog", None)
+            if (key_code in (0, 8, 9) and frame is not None
+                    and frame.isVisible()
+                    and ApplicationShortcutFilter._has_focus_in(frame)
+                    and not ApplicationShortcutFilter._is_text_entry(frame)):
+                frame._dismiss_context_menu()
+                if key_code == 0:
+                    frame.canvas.select_all()
+                elif key_code == 8:
+                    frame._copy_sources()
+                else:
+                    frame._paste_sources()
+                return True
+            if (key_code == 13 and frame is not None and frame.isVisible()
+                    and ApplicationShortcutFilter._has_focus_in(frame)):
+                frame.close()
+                return True
             if self._arrange_has_focus(dialog):
                 if key_code == 1:
                     dialog.toggle_snap()
@@ -541,6 +570,13 @@ class MacLetterShortcutMonitor:
                     ApplicationShortcutFilter._has_focus_in(dialog))
 
     def _dispatch(self, letter: str) -> bool:
+        frame = getattr(self.owner, "frame_dialog", None)
+        if (letter == "F" and frame is not None and frame.isVisible()
+                and ApplicationShortcutFilter._has_focus_in(frame)):
+            if ApplicationShortcutFilter._is_text_entry(frame):
+                return False
+            frame.close()
+            return True
         dialog = self.owner.arrangement_dialog
         if self._arrange_has_focus(dialog):
             if ApplicationShortcutFilter._is_text_entry(dialog):
@@ -551,7 +587,7 @@ class MacLetterShortcutMonitor:
             if letter == "C":
                 dialog.toggle_coordinates()
                 return True
-            if letter == "F":
+            if letter == "M":
                 dialog.cycle_all_mapping()
                 return True
             if letter == "I" and dialog.identify_button.isEnabled():
@@ -563,7 +599,8 @@ class MacLetterShortcutMonitor:
         if ApplicationShortcutFilter._is_text_entry(self.owner):
             return False
         button = {"R": self.owner.refresh_button,
-                  "A": self.owner.arrange_button}.get(letter)
+                  "A": self.owner.arrange_button,
+                  "F": getattr(self.owner, "frame_button", None)}.get(letter)
         if button is None:
             return False
         if not button.isEnabled():
@@ -2102,7 +2139,7 @@ class DisplayArrangementDialog(QDialog):
         for sequence, callback in (
                 ("A", self.close_with_shortcut),
                 ("C", self.toggle_coordinates),
-                ("F", self.cycle_all_mapping),
+                ("M", self.cycle_all_mapping),
                 ("Ctrl+S", self.toggle_snap),
                 ("Ctrl+W", self.close_with_shortcut)):
             shortcut = QShortcut(QKeySequence(sequence), self)
@@ -4314,6 +4351,7 @@ class DisplayInspectorWindow(QMainWindow):
         self.about_dialog: QDialog | None = None
         self.shortcuts_dialog: QDialog | None = None
         self.arrangement_dialog: DisplayArrangementDialog | None = None
+        self.frame_dialog: FrameWindow | None = None
         self._identify_last_configuration = None
         self._arrangement_refresh_timer = QTimer(self)
         self._arrangement_refresh_timer.setSingleShot(True)
@@ -4369,6 +4407,7 @@ class DisplayInspectorWindow(QMainWindow):
         self.statusBar().showMessage(shortcut_error or "Ready to read displays.")
         self._add_keyboard_shortcut("R", self.refresh_button)
         self._add_keyboard_shortcut("A", self.arrange_button)
+        self._add_keyboard_shortcut("F", self.frame_button)
         self._add_keyboard_shortcut("Ctrl+E", self.export_button)
         self._sync_shortcut_action_state()
         help_menu = self.menuBar().addMenu("Help")
@@ -4585,11 +4624,16 @@ class DisplayInspectorWindow(QMainWindow):
         self.arrange_button.setToolTip("Arrange displays (A)")
         self.arrange_button.clicked.connect(self.show_arrangement)
         self.arrange_button.setEnabled(False)
+        self.frame_button = QPushButton("Frame")
+        self.frame_button.setToolTip("Create a movable, resizable display frame")
+        self.frame_button.clicked.connect(self.show_frame)
+        self.frame_button.setEnabled(False)
         self.export_button = QPushButton("Export")
         self.export_button.setToolTip("Export display report (⌘E)")
         self.export_button.clicked.connect(self.export_capture)
         side.addWidget(self.refresh_button)
         side.addWidget(self.arrange_button)
+        side.addWidget(self.frame_button)
         side.addWidget(self.export_button)
 
         detail = QWidget(objectName="detail")
@@ -4796,6 +4840,7 @@ class DisplayInspectorWindow(QMainWindow):
         self.mode_switch_kind = "rotation"
         self.refresh_button.setEnabled(False)
         self.arrange_button.setEnabled(False)
+        self.frame_button.setEnabled(False)
         self.export_button.setEnabled(False)
         self.resolution_page.rotation_combo.setEnabled(False)
         self.statusBar().showMessage("Preparing the selected display orientation…")
@@ -4860,6 +4905,7 @@ class DisplayInspectorWindow(QMainWindow):
         self.mode_switch_kind = kind
         self.refresh_button.setEnabled(False)
         self.arrange_button.setEnabled(False)
+        self.frame_button.setEnabled(False)
         self.export_button.setEnabled(False)
         if self.resolution_page.rotation_combo is not None:
             self.resolution_page.rotation_combo.setEnabled(False)
@@ -4890,6 +4936,7 @@ class DisplayInspectorWindow(QMainWindow):
         self.mode_switch_process = None
         self.refresh_button.setEnabled(True)
         self.arrange_button.setEnabled(self.display_list.count() > 0)
+        self.frame_button.setEnabled(self.display_list.count() > 0)
         self.export_button.setEnabled(True)
         if self.resolution_page.rotation_combo is not None:
             self.resolution_page.rotation_combo.setEnabled(True)
@@ -4955,6 +5002,7 @@ class DisplayInspectorWindow(QMainWindow):
         self._set_refresh_controls_busy(True)
         self.refresh_button.setEnabled(False)
         self.arrange_button.setEnabled(False)
+        self.frame_button.setEnabled(False)
         self.export_button.setEnabled(False)
         self.statusBar().showMessage("Reading displays and modes…")
         self._load_icc_profiles()
@@ -4965,7 +5013,8 @@ class DisplayInspectorWindow(QMainWindow):
         self.worker.start()
 
     def _set_refresh_controls_busy(self, busy: bool):
-        for button in (self.refresh_button, self.arrange_button, self.export_button):
+        for button in (self.refresh_button, self.arrange_button, self.frame_button,
+                       self.export_button):
             button.setProperty("refreshBusy", busy)
             style = button.style()
             style.unpolish(button)
@@ -5107,6 +5156,7 @@ class DisplayInspectorWindow(QMainWindow):
         }
         self.refresh_button.setEnabled(False)
         self.arrange_button.setEnabled(False)
+        self.frame_button.setEnabled(False)
         self.export_button.setEnabled(False)
         self.statusBar().showMessage("Capturing and exporting full display diagnostics…")
         self.worker = CaptureWorker(export_path, self, export_context=export_context)
@@ -5218,6 +5268,7 @@ class DisplayInspectorWindow(QMainWindow):
             self._clear_detail()
         self.refresh_button.setEnabled(True)
         self.arrange_button.setEnabled(bool(displays))
+        self.frame_button.setEnabled(bool(displays))
         self.refresh_button.setText("Refresh")
         self.export_button.setEnabled(True)
         self.export_button.setText("Export")
@@ -5495,6 +5546,7 @@ class DisplayInspectorWindow(QMainWindow):
     def _set_role_change_busy(self, busy: bool):
         self.refresh_button.setEnabled(not busy)
         self.arrange_button.setEnabled(not busy and self.display_list.count() > 0)
+        self.frame_button.setEnabled(not busy and self.display_list.count() > 0)
         self.export_button.setEnabled(not busy)
         self.tabs.setEnabled(not busy)
 
@@ -5747,8 +5799,18 @@ class DisplayInspectorWindow(QMainWindow):
         )
         self._last_arrangement_active_ids = frozenset(current_ids)
         self._last_arrangement_main_id = current_main
-        if (arrangement_layout_signature(screens) !=
-                arrangement_layout_signature(self.arrangement_dialog.canvas.screens)):
+        layout_changed = (
+            arrangement_layout_signature(screens) !=
+            arrangement_layout_signature(self.arrangement_dialog.canvas.screens)
+        )
+        if layout_changed:
+            # Frame output targets the live desktop geometry. Stop before the
+            # next scene can be applied to a layout that no longer matches it.
+            # Do not refresh Frame's canvas here: its source cards stay at their
+            # existing coordinates until the user explicitly reopens/refreshes
+            # the Frame window.
+            if self.frame_dialog is not None and self.frame_dialog._output_active:
+                self.frame_dialog._stop_output()
             self.arrangement_dialog.update_displays(screens, 0)
         # A persistent difference between the fast CoreGraphics list and the
         # richer device capture (notably omitted mirror members) is not itself
@@ -5897,6 +5959,7 @@ class DisplayInspectorWindow(QMainWindow):
         self._set_refresh_controls_busy(False)
         self.refresh_button.setEnabled(True)
         self.arrange_button.setEnabled(self.display_list.count() > 0)
+        self.frame_button.setEnabled(self.display_list.count() > 0)
         self.refresh_button.setText("Refresh")
         self.export_button.setEnabled(True)
         self.export_button.setText("Export")
@@ -5944,6 +6007,35 @@ class DisplayInspectorWindow(QMainWindow):
         self.arrangement_dialog.activateWindow()
         self._arrangement_poll_timer.start()
         self._arrangement_refresh_timer.start(0)
+
+    def show_frame(self):
+        displays = [
+            self.display_list.item(index).data(Qt.ItemDataRole.UserRole)
+            for index in range(self.display_list.count())
+        ]
+        displays = [dict(display, frameLabel=display_label(display)) for display in displays]
+        displays = [display for display in displays
+                    if (display.get("desktop") or {}).get("x") is not None
+                    and (display.get("desktop") or {}).get("y") is not None
+                    and (display.get("desktop") or {}).get("width")
+                    and (display.get("desktop") or {}).get("height")]
+        if not displays:
+            QMessageBox.information(self, APP_TITLE, "No active displays are available for Frame.")
+            return
+        if self.frame_dialog is None:
+            self.frame_dialog = FrameWindow(displays, self)
+            self.frame_dialog.setModal(False)
+            self.frame_dialog.finished.connect(self._frame_dialog_finished)
+        else:
+            self.frame_dialog.update_displays(displays)
+        self.frame_dialog.show()
+        self.frame_dialog.raise_()
+        self.frame_dialog.activateWindow()
+
+    def _frame_dialog_finished(self, _result):
+        # Keep the non-modal editor reusable, but release all capture/output state.
+        if self.frame_dialog is not None:
+            self.frame_dialog._stop_output()
 
     def _configure_identify_helper(self, screens):
         dialog = self.arrangement_dialog
@@ -6499,6 +6591,7 @@ class DisplayInspectorWindow(QMainWindow):
     def _clear_detail(self):
         self.tabs.setEnabled(False)
         self.arrange_button.setEnabled(False)
+        self.frame_button.setEnabled(False)
         self.folder = ""
         self.open_folder_button.setEnabled(False)
         for text in (self.edid_text, self.connection_text, self.profile_text, self.raw_text):
@@ -6533,6 +6626,9 @@ class DisplayInspectorWindow(QMainWindow):
         if self._display_reconfiguration_watcher is not None:
             self._display_reconfiguration_watcher.close()
             self._display_reconfiguration_watcher = None
+        if self.frame_dialog is not None:
+            self.frame_dialog.close()
+            self.frame_dialog.shutdown()
         self._stop_identify_helper()
         super().closeEvent(event)
 
@@ -6546,6 +6642,8 @@ def main():
         app, QSettings(APP_ORG, SETTINGS_NAME))
     window = DisplayInspectorWindow()
     app.aboutToQuit.connect(window._stop_identify_helper)
+    app.aboutToQuit.connect(lambda: window.frame_dialog.shutdown()
+                            if window.frame_dialog is not None else None)
     window.show()
     window.raise_()
     window.activateWindow()

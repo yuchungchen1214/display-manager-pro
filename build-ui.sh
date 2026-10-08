@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
-ROOT="/Users/yuchungchen/Documents/PycharmProjects/display_mode_probe"
-PYTHON="/Users/yuchungchen/Documents/PycharmProjects/colourspace_patch_rx/.venv/bin/python"
+ROOT="${0:A:h}"
+PYTHON="$ROOT/.venv/bin/python"
 APP_VERSION="$(tr -d '\r\n' < "$ROOT/VERSION")"
 DIST="${DISPLAY_MODE_DIST_DIR:-$ROOT/dist-v$APP_VERSION}"
 WORK="${DISPLAY_MODE_BUILD_DIR:-$ROOT/build/pyinstaller-v$APP_VERSION}"
@@ -30,6 +30,10 @@ clang -fobjc-arc -framework Foundation -framework CoreGraphics \
   "$ROOT/tools/display-arrangement.m" -o "$ROOT/.build/display-arrangement"
 clang -fobjc-arc -framework Foundation -framework AppKit \
   "$ROOT/tools/display-identify-overlay.m" -o "$ROOT/.build/display-identify-overlay"
+/usr/bin/swiftc -parse-as-library -O -module-cache-path "$ROOT/.build/swift-module-cache" \
+  -framework AppKit -framework ScreenCaptureKit \
+  -framework CoreGraphics -framework CoreImage -framework CoreVideo -framework CoreMedia \
+  "$ROOT/tools/display-frame-output.swift" -o "$ROOT/.build/display-frame-output"
 clang -dynamiclib -fobjc-arc -framework AppKit \
   "$ROOT/tools/display-shortcut-monitor.m" -o "$ROOT/.build/display-shortcut-monitor.dylib"
 clang -fobjc-arc -framework Foundation -framework ColorSync \
@@ -53,6 +57,7 @@ clang -fobjc-arc -framework Foundation -framework CoreGraphics -framework ColorS
   --add-binary "$ROOT/.build/display-rotation-switch:." \
   --add-binary "$ROOT/.build/display-arrangement:." \
   --add-binary "$ROOT/.build/display-identify-overlay:." \
+  --add-binary "$ROOT/.build/display-frame-output:." \
   --add-binary "$ROOT/.build/display-shortcut-monitor.dylib:." \
   --add-binary "$ROOT/.build/list-icc-profiles:." \
   --add-binary "$ROOT/.build/apply-icc-profile:." \
