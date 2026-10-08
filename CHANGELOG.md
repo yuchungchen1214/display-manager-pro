@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1 — 2026-10-09
+
+- Keep Frame output geometry consistent with the Arrange display layout, including mixed 1×/2× scaling.
+- Improve Frame editing with keyboard shortcuts, source selection and grouping, snapping, rotation, and pixel measurements.
+- Clarify shortcut help and display coordinate units.
+
 ## 1.2.0 — 2026-10-08
 
 - Add a full-desktop Frame editor with freely positioned, resized, rotated, and layered source regions.

@@ -22,9 +22,9 @@ Display Manager Pro brings display information and everyday layout controls toge
 
 ## Download
 
-[Download Display Manager Pro v1.1.0 for macOS (.dmg)](https://github.com/yuchungchen1214/display-manager-pro/releases/download/v1.1.0/DisplayManagerPro-v1.1.0-macOS.dmg)
+[Download Display Manager Pro v1.2.1 for macOS (.dmg)](https://github.com/yuchungchen1214/display-manager-pro/releases/download/v1.2.1/DisplayManagerPro-v1.2.1-macOS.dmg)
 
-See the [v1.1.0 release notes](https://github.com/yuchungchen1214/display-manager-pro/releases/tag/v1.1.0).
+See the [v1.2.1 release notes](https://github.com/yuchungchen1214/display-manager-pro/releases/tag/v1.2.1).
 
 ## Important notes
 
